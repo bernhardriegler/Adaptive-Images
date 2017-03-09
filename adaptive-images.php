@@ -30,7 +30,7 @@ $requested_file = basename($requested_uri);
 $source_file    = $document_root.$requested_uri;
 $resolution     = FALSE;
 
-/* Mobile detection 
+/* Mobile detection
    NOTE: only used in the event a cookie isn't available. */
 function is_mobile() {
   $userAgent = strtolower($_SERVER['HTTP_USER_AGENT']);
@@ -129,6 +129,25 @@ function refreshCache($source_file, $cache_file, $resolution) {
   return generateImage($source_file, $cache_file, $resolution);
 }
 
+/* helper function to use the right imageCreate... function for each mimetype */
+function imageCreateFromAny($filepath, $mimeType) {
+    switch ($mimeType) {
+        case IMG_GIF :
+            $im = imageCreateFromGif($filepath);
+        break;
+        case IMG_JPG :
+        case IMG_JPEG :
+            $im = imageCreateFromJpeg($filepath);
+        break;
+        case IMG_PNG :
+            $im = imageCreateFromPng($filepath);
+        break;
+        default:
+            $im = false;
+    }
+    return $im;
+}
+
 /* generates the given cache file for the given source file with the given resolution */
 function generateImage($source_file, $cache_file, $resolution) {
   global $sharpen, $jpg_quality;
@@ -151,17 +170,13 @@ function generateImage($source_file, $cache_file, $resolution) {
   $new_height = ceil($new_width * $ratio);
   $dst        = ImageCreateTrueColor($new_width, $new_height); // re-sized image
 
-  switch ($extension) {
-    case 'png':
-      $src = @ImageCreateFromPng($source_file); // original image
-    break;
-    case 'gif':
-      $src = @ImageCreateFromGif($source_file); // original image
-    break;
-    default:
-      $src = @ImageCreateFromJpeg($source_file); // original image
-      ImageInterlace($dst, true); // Enable interlancing (progressive JPG, smaller size file)
-    break;
+
+  // get mime type from $dimensions - witch holds the info from getImageSize() for the original file
+  $src = imageCreateFromAny($source_file, $dimensions['mime']);
+  // send an error
+  if($src) {
+      sendErrorImage("Failed to create image - could not determine mimetype: $source_file");
+      exit();
   }
 
   if($extension=='png'){
@@ -170,7 +185,7 @@ function generateImage($source_file, $cache_file, $resolution) {
     $transparent = imagecolorallocatealpha($dst, 255, 255, 255, 127);
     imagefilledrectangle($dst, 0, 0, $new_width, $new_height, $transparent);
   }
-  
+
   ImageCopyResampled($dst, $src, 0, 0, 0, 0, $new_width, $new_height, $width, $height); // do the resize in memory
   ImageDestroy($src);
 
@@ -189,7 +204,7 @@ function generateImage($source_file, $cache_file, $resolution) {
   $cache_dir = dirname($cache_file);
 
   // does the directory exist already?
-  if (!is_dir($cache_dir)) { 
+  if (!is_dir($cache_dir)) {
     if (!mkdir($cache_dir, 0755, true)) {
       // check again if it really doesn't exist to protect against race conditions
       if (!is_dir($cache_dir)) {
